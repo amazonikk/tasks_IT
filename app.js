@@ -1,7 +1,7 @@
 const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbyYv_Vkw3rcYcX59OT7c_gQRUerethLblghxq6_sYVg880BI1zYEAEY4iK68O_jWPUPyA/exec',
   API_TOKEN: 'CHANGE_ME_SECRET_TOKEN',
-  REFRESH_INTERVAL_MS: 0, // 0 = автооновлення вимкнене. Наприклад 60000 = раз на хвилину.
+  REFRESH_INTERVAL_MS: 300000, // 0 = автооновлення вимкнене. Наприклад 60000 = раз на хвилину. Тут раз на 5 хв
 };
 
 const HEADERS = {
