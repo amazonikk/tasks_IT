@@ -1,7 +1,7 @@
 const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbz77P04QF1FXC9bjK1wGnuckgtJH-lo-xiBV_ymwJSCAtj_7asrfWFwJHQWjJI70rGX8g/exec',
   API_TOKEN: 'tasks_secret_2026',
-  REFRESH_INTERVAL_MS: 300000, // 0 = автооновлення вимкнене. Наприклад 60000 = раз на хвилину. Тут раз на 5 хв
+  REFRESH_INTERVAL_MS: 300000, // автооновлення раз на 5 хвилин.
 };
 
 const HEADERS = {
@@ -120,25 +120,45 @@ async function apiCall(action, payload = {}) {
     throw new Error('API_URL не налаштований у app.js');
   }
 
-  const response = await fetch(CONFIG.API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, token: CONFIG.API_TOKEN, ...payload }),
+  // Google Apps Script часто блокує звичайний fetch з GitHub Pages через CORS.
+  // Тому читаємо відповідь через JSONP: це працює для GitHub Pages + Apps Script без проксі.
+  return new Promise((resolve, reject) => {
+    const callbackName = `__taskDashboardApi_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement('script');
+    const timeoutMs = 20000;
+
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      delete window[callbackName];
+      script.remove();
+    };
+
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Apps Script не відповів. Перевір Web App URL, доступ Anyone і New version у deployment.'));
+    }, timeoutMs);
+
+    window[callbackName] = (data) => {
+      cleanup();
+      if (!data || data.success === false) {
+        reject(new Error(data?.error || 'Невідома помилка API'));
+        return;
+      }
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('Не вдалося підключитися до Apps Script. Перевір API_URL і deployment.'));
+    };
+
+    const url = new URL(CONFIG.API_URL);
+    url.searchParams.set('callback', callbackName);
+    url.searchParams.set('payload', JSON.stringify({ action, token: CONFIG.API_TOKEN, ...payload }));
+
+    script.src = url.toString();
+    document.body.appendChild(script);
   });
-
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Apps Script повернув не JSON. Перевір deployment. Відповідь: ${text.slice(0, 160)}`);
-  }
-
-  if (!data.success) {
-    throw new Error(data.error || 'Невідома помилка API');
-  }
-
-  return data;
 }
 
 function normalizePercent(value) {
