@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Дашборд задач</title>
+  <meta name="description" content="Дашборд контролю задач з Google Sheets" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">Google Sheets ↔ GitHub Pages</div>
+        <h1>Дашборд контролю задач</h1>
+        <p>Задачі, дедлайни, пріоритети, блокери і прогрес в одному місці.</p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn btn-primary" id="openCreateTask">+ Додати задачу</button>
+        <button class="btn btn-soft" id="refreshData">Оновити дані</button>
+      </div>
+    </header>
+
+    <section class="setup-warning hidden" id="setupWarning">
+      <strong>Потрібно вставити Apps Script URL.</strong>
+      Відкрий <code>app.js</code> і заміни <code>PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE</code> на URL вебдодатку.
+    </section>
+
+    <section class="toolbar card">
+      <div class="field field-wide">
+        <label for="searchInput">Пошук</label>
+        <input id="searchInput" type="search" placeholder="Назва, тег, виконавець, коментар..." />
+      </div>
+      <div class="field">
+        <label for="statusFilter">Статус</label>
+        <select id="statusFilter"><option value="">Всі</option></select>
+      </div>
+      <div class="field">
+        <label for="priorityFilter">Пріоритет</label>
+        <select id="priorityFilter"><option value="">Всі</option></select>
+      </div>
+      <div class="field">
+        <label for="ownerFilter">Виконавець</label>
+        <select id="ownerFilter"><option value="">Всі</option></select>
+      </div>
+      <div class="field">
+        <label for="departmentFilter">Відділ</label>
+        <select id="departmentFilter"><option value="">Всі</option></select>
+      </div>
+      <label class="toggle-row">
+        <input id="overdueOnly" type="checkbox" />
+        <span>Тільки прострочені</span>
+      </label>
+    </section>
+
+    <main>
+      <section class="kpi-grid" id="kpiGrid"></section>
+
+      <section class="grid-two">
+        <article class="card chart-card">
+          <div class="section-head">
+            <div>
+              <h2>Статуси</h2>
+              <p>Скільки задач у кожному стані.</p>
+            </div>
+          </div>
+          <canvas id="statusChart" height="210"></canvas>
+        </article>
+
+        <article class="card chart-card">
+          <div class="section-head">
+            <div>
+              <h2>Пріоритети</h2>
+              <p>Фокус по критичності задач.</p>
+            </div>
+          </div>
+          <canvas id="priorityChart" height="210"></canvas>
+        </article>
+      </section>
+
+      <section class="card board-section">
+        <div class="section-head board-head">
+          <div>
+            <h2>Канбан задач</h2>
+            <p>Змінюй статус прямо з картки — зміни підуть у Google Таблицю.</p>
+          </div>
+          <div class="meta-line" id="lastSync">—</div>
+        </div>
+        <div class="board" id="board"></div>
+      </section>
+
+      <section class="card table-section">
+        <div class="section-head">
+          <div>
+            <h2>Детальна таблиця</h2>
+            <p>Повний список задач з основними полями.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Задача</th>
+                <th>Відділ</th>
+                <th>Виконавець</th>
+                <th>Статус</th>
+                <th>Пріоритет</th>
+                <th>Дедлайн</th>
+                <th>Прогрес</th>
+                <th>Дія</th>
+              </tr>
+            </thead>
+            <tbody id="taskTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog class="modal" id="taskModal">
+    <form method="dialog" class="modal-box" id="taskForm">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow" id="modalMode">Нова задача</div>
+          <h2 id="modalTitle">Додати задачу</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-modal>×</button>
+      </div>
+
+      <input type="hidden" id="taskId" />
+
+      <div class="form-grid">
+        <div class="field field-wide">
+          <label for="taskTitle">Назва задачі *</label>
+          <input id="taskTitle" required placeholder="Наприклад: Перевірити видачу доступу після Stripe" />
+        </div>
+        <div class="field">
+          <label for="taskStatus">Статус</label>
+          <select id="taskStatus"></select>
+        </div>
+        <div class="field">
+          <label for="taskPriority">Пріоритет</label>
+          <select id="taskPriority"></select>
+        </div>
+        <div class="field">
+          <label for="taskDepartment">Відділ / напрям</label>
+          <select id="taskDepartment"></select>
+        </div>
+        <div class="field">
+          <label for="taskType">Тип задачі</label>
+          <select id="taskType"></select>
+        </div>
+        <div class="field">
+          <label for="taskOwner">Виконавець</label>
+          <select id="taskOwner"></select>
+        </div>
+        <div class="field">
+          <label for="taskCreator">Постановник</label>
+          <select id="taskCreator"></select>
+        </div>
+        <div class="field">
+          <label for="taskDeadline">Дедлайн</label>
+          <input id="taskDeadline" type="date" />
+        </div>
+        <div class="field">
+          <label for="taskEstimate">Оцінка, год</label>
+          <input id="taskEstimate" type="number" min="0" step="0.5" />
+        </div>
+        <div class="field field-wide">
+          <label for="taskGoal">Ціль задачі / навіщо</label>
+          <textarea id="taskGoal" rows="2" placeholder="Для чого це потрібно бізнесу або команді"></textarea>
+        </div>
+        <div class="field field-wide">
+          <label for="taskDescription">Опис / контекст</label>
+          <textarea id="taskDescription" rows="3" placeholder="Що саме потрібно зробити, які є нюанси"></textarea>
+        </div>
+        <div class="field field-wide">
+          <label for="taskResult">Очікуваний результат</label>
+          <textarea id="taskResult" rows="2" placeholder="Що має бути в кінці"></textarea>
+        </div>
+        <div class="field field-wide">
+          <label for="taskDoneCriteria">Критерії готовності</label>
+          <textarea id="taskDoneCriteria" rows="2" placeholder="Як зрозуміти, що задача реально готова"></textarea>
+        </div>
+        <div class="field field-wide">
+          <label for="taskNextStep">Наступний крок</label>
+          <input id="taskNextStep" placeholder="Наприклад: Перевірити webhook у live режимі" />
+        </div>
+        <div class="field field-wide">
+          <label for="taskLinks">Лінки / макети / ТЗ</label>
+          <input id="taskLinks" placeholder="https://..." />
+        </div>
+        <div class="field field-wide">
+          <label for="taskPr">Pull request / гілка / файл</label>
+          <input id="taskPr" placeholder="GitHub branch, PR або файл" />
+        </div>
+        <div class="field field-wide">
+          <label for="taskTags">Теги</label>
+          <input id="taskTags" placeholder="Stripe, LMS, доступ" />
+        </div>
+        <div class="field">
+          <label for="taskProgress">Прогрес, %</label>
+          <input id="taskProgress" type="number" min="0" max="100" step="5" value="0" />
+        </div>
+        <label class="toggle-row blocker-toggle">
+          <input id="taskBlocker" type="checkbox" />
+          <span>Є блокер</span>
+        </label>
+        <div class="field field-wide">
+          <label for="taskBlockingReason">Що блокує / що потрібно</label>
+          <textarea id="taskBlockingReason" rows="2"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-soft" type="button" data-close-modal>Скасувати</button>
+        <button class="btn btn-primary" type="submit" id="saveTaskBtn">Зберегти</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="modal" id="commentModal">
+    <form method="dialog" class="modal-box" id="commentForm">
+      <div class="modal-head">
+        <div>
+          <div class="eyebrow">Коментар / апдейт</div>
+          <h2 id="commentTaskTitle">Додати запис</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-comment>×</button>
+      </div>
+      <input type="hidden" id="commentTaskId" />
+      <div class="form-grid">
+        <div class="field">
+          <label for="commentType">Тип запису</label>
+          <select id="commentType"></select>
+        </div>
+        <div class="field">
+          <label for="commentAuthor">Автор</label>
+          <select id="commentAuthor"></select>
+        </div>
+        <div class="field">
+          <label for="commentTo">Кому адресовано</label>
+          <select id="commentTo"></select>
+        </div>
+        <div class="field field-wide">
+          <label for="commentText">Текст / коментар *</label>
+          <textarea id="commentText" rows="4" required></textarea>
+        </div>
+        <div class="field field-wide">
+          <label for="commentNext">Наступна дія</label>
+          <input id="commentNext" />
+        </div>
+        <div class="field">
+          <label for="commentDeadline">Дедлайн відповіді</label>
+          <input id="commentDeadline" type="date" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-soft" type="button" data-close-comment>Скасувати</button>
+        <button class="btn btn-primary" type="submit">Додати коментар</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
