@@ -1,5 +1,5 @@
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbyYv_Vkw3rcYcX59OT7c_gQRUerethLblghxq6_sYVg880BI1zYEAEY4iK68O_jWPUPyA/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbz77P04QF1FXC9bjK1wGnuckgtJH-lo-xiBV_ymwJSCAtj_7asrfWFwJHQWjJI70rGX8g/exec',
   API_TOKEN: 'tasks_secret_2026',
   REFRESH_INTERVAL_MS: 300000, // 0 = автооновлення вимкнене. Наприклад 60000 = раз на хвилину. Тут раз на 5 хв
 };
