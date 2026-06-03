@@ -216,6 +216,22 @@
         </div>
       </div>
 
+
+      <section class="subtask-panel hidden" id="subtaskSection">
+        <div class="subtask-panel-head">
+          <div>
+            <h3>Підзадачі / чеклист</h3>
+            <p id="subtaskProgressInfo">—</p>
+          </div>
+        </div>
+        <div class="modal-subtasks" id="modalSubtasks"></div>
+        <div class="add-subtask-row">
+          <input id="newSubtaskTitle" type="text" placeholder="Нова підзадача, наприклад: Перевірити webhook" />
+          <button class="small-btn" type="button" data-action="add-subtask">+ Додати підзадачу</button>
+        </div>
+        <p class="subtask-note">Коли ставиш галочку, підзадача переходить у статус “Готово”, а прогрес головної задачі автоматично перераховується в Google Таблиці.</p>
+      </section>
+
       <div class="modal-actions">
         <button class="btn btn-soft" type="button" data-close-modal>Скасувати</button>
         <button class="btn btn-primary" type="submit" id="saveTaskBtn">Зберегти</button>
