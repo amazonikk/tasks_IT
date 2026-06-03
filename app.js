@@ -1,7 +1,7 @@
 const CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbx56yudmmOHJ5LOGCZ0SX2pg6D_XAdbOpj2iR0yZUcgoizdvVkrttmCfym4QxaSHjB4Bg/exec',
   API_TOKEN: 'tasks_secret_2026',
-  REFRESH_INTERVAL_MS: 300000, // автооновлення раз на 5 хвилин.
+  REFRESH_INTERVAL_MS: 5000, // майже миттєве автооновлення: раз на 5 секунд.
 };
 
 const HEADERS = {
@@ -37,6 +37,22 @@ const HEADERS = {
   notes: 'Примітки',
 };
 
+
+const SUBTASK_HEADERS = {
+  id: 'Subtask ID',
+  taskId: 'Task ID',
+  title: 'Підзадача',
+  description: 'Опис',
+  owner: 'Виконавець',
+  status: 'Статус',
+  priority: 'Пріоритет',
+  deadline: 'Дедлайн',
+  progress: 'Прогрес %',
+  link: 'Посилання',
+  comment: 'Коментар',
+  updated: 'Дата апдейту',
+};
+
 const DEFAULT_STATUSES = ['Нове', 'Уточнення', 'До роботи', 'В роботі', 'На перевірці', 'Правки', 'Готово', 'Заблоковано', 'На паузі', 'Скасовано'];
 const DONE_STATUSES = ['Готово', 'Скасовано'];
 const ACTIVE_STATUSES = ['Нове', 'Уточнення', 'До роботи', 'В роботі', 'На перевірці', 'Правки', 'Заблоковано', 'На паузі'];
@@ -56,6 +72,7 @@ const state = {
   filteredTasks: [],
   charts: {},
   isLoading: false,
+  autoRefreshTimer: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -84,6 +101,9 @@ const refs = {
   commentModal: $('#commentModal'),
   commentForm: $('#commentForm'),
   commentTaskTitle: $('#commentTaskTitle'),
+  subtaskSection: $('#subtaskSection'),
+  modalSubtasks: $('#modalSubtasks'),
+  newSubtaskTitle: $('#newSubtaskTitle'),
 };
 
 function getValue(task, key) {
@@ -92,6 +112,43 @@ function getValue(task, key) {
 
 function setValue(obj, key, value) {
   obj[HEADERS[key]] = value ?? '';
+}
+
+
+function getSubtaskValue(subtask, key) {
+  return subtask?.[SUBTASK_HEADERS[key]] ?? '';
+}
+
+function setSubtaskValue(obj, key, value) {
+  obj[SUBTASK_HEADERS[key]] = value ?? '';
+}
+
+function isSubtaskDone(subtask) {
+  const status = String(getSubtaskValue(subtask, 'status')).toLowerCase();
+  return status === 'готово' || status === 'done' || normalizePercent(getSubtaskValue(subtask, 'progress')) >= 100;
+}
+
+function getTaskSubtasks(taskId) {
+  return state.subtasks.filter((subtask) => String(getSubtaskValue(subtask, 'taskId')) === String(taskId));
+}
+
+function subtaskProgress(subtask) {
+  if (isSubtaskDone(subtask)) return 100;
+  return normalizePercent(getSubtaskValue(subtask, 'progress'));
+}
+
+function taskProgress(task) {
+  const id = getValue(task, 'id');
+  const subtasks = getTaskSubtasks(id);
+  if (!subtasks.length) return normalizePercent(getValue(task, 'progress'));
+  return Math.round(subtasks.reduce((sum, subtask) => sum + subtaskProgress(subtask), 0) / subtasks.length);
+}
+
+function subtaskStats(taskId) {
+  const subtasks = getTaskSubtasks(taskId);
+  const done = subtasks.filter(isSubtaskDone).length;
+  const progress = subtasks.length ? Math.round((done / subtasks.length) * 100) : 0;
+  return { total: subtasks.length, done, progress };
 }
 
 function escapeHtml(value) {
@@ -306,7 +363,7 @@ function renderKpis() {
   const done = tasks.filter(isDone).length;
   const overdue = tasks.filter(isOverdue).length;
   const blocked = tasks.filter(isBlocked).length;
-  const averageProgress = total ? Math.round(tasks.reduce((sum, task) => sum + normalizePercent(getValue(task, 'progress')), 0) / total) : 0;
+  const averageProgress = total ? Math.round(tasks.reduce((sum, task) => sum + taskProgress(task), 0) / total) : 0;
 
   const cards = [
     { title: 'Усього задач', value: total, note: 'за вибраним фільтром' },
@@ -374,9 +431,40 @@ function priorityClass(priority) {
   return '';
 }
 
+
+function renderSubtaskChecklist(taskId, subtasks, limit = 5) {
+  if (!subtasks.length) return '';
+  const visible = subtasks.slice(0, limit);
+  const hiddenCount = Math.max(0, subtasks.length - visible.length);
+  const stats = subtaskStats(taskId);
+
+  return `
+    <div class="subtasks-card">
+      <div class="subtasks-head">
+        <span>Підзадачі</span>
+        <span>${stats.done}/${stats.total}</span>
+      </div>
+      <div class="subtask-list compact">
+        ${visible.map((subtask) => {
+          const subtaskId = getSubtaskValue(subtask, 'id');
+          const checked = isSubtaskDone(subtask) ? 'checked' : '';
+          return `
+            <label class="subtask-item ${checked ? 'done' : ''}">
+              <input type="checkbox" data-action="toggle-subtask" data-subtask-id="${escapeHtml(subtaskId)}" ${checked} />
+              <span>${escapeHtml(getSubtaskValue(subtask, 'title') || subtaskId)}</span>
+            </label>
+          `;
+        }).join('')}
+        ${hiddenCount ? `<div class="subtask-more">+ ще ${hiddenCount}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function taskCardTemplate(task) {
   const id = getValue(task, 'id');
-  const progress = normalizePercent(getValue(task, 'progress'));
+  const subtasks = getTaskSubtasks(id);
+  const progress = taskProgress(task);
   const deadline = getValue(task, 'deadline');
   const owner = getValue(task, 'owner') || 'Без виконавця';
   const nextStep = getValue(task, 'nextStep');
@@ -401,6 +489,7 @@ function taskCardTemplate(task) {
         <div class="progress-label"><span>Прогрес</span><span>${progress}%</span></div>
         <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
       </div>
+      ${renderSubtaskChecklist(id, subtasks)}
       <div class="task-meta">Виконавець: ${escapeHtml(owner)}</div>
       <div class="task-meta">Дедлайн: ${escapeHtml(formatDate(deadline))}</div>
       ${nextStep ? `<div class="task-meta">Наступний крок: ${escapeHtml(nextStep)}</div>` : ''}
@@ -433,7 +522,7 @@ function renderBoard() {
 function renderTable() {
   refs.tableBody.innerHTML = state.filteredTasks.map((task) => {
     const id = getValue(task, 'id');
-    const progress = normalizePercent(getValue(task, 'progress'));
+    const progress = taskProgress(task);
     return `
       <tr data-task-id="${escapeHtml(id)}">
         <td>${escapeHtml(id)}</td>
@@ -464,7 +553,7 @@ function renderAll(updateFilters = true) {
   renderTable();
 }
 
-async function loadData() {
+async function loadData(options = {}) {
   if (state.isLoading) return;
   if (!isApiConfigured()) {
     refs.setupWarning.classList.remove('hidden');
@@ -473,8 +562,11 @@ async function loadData() {
   }
 
   state.isLoading = true;
-  refs.refreshData.disabled = true;
-  refs.refreshData.textContent = 'Оновлюю...';
+  const silent = Boolean(options.silent);
+  if (!silent) {
+    refs.refreshData.disabled = true;
+    refs.refreshData.textContent = 'Оновлюю...';
+  }
 
   try {
     const data = await apiCall('getData');
@@ -485,20 +577,62 @@ async function loadData() {
     state.filteredTasks = [...state.tasks];
     hydrateFilters();
     applyFilters();
+    const activeModalTaskId = $('#taskId')?.value;
+    if (refs.taskModal.open && activeModalTaskId) renderModalSubtasks(activeModalTaskId);
     refs.lastSync.textContent = `Остання синхронізація: ${new Date().toLocaleString('uk-UA')}`;
-    showToast('Дані оновлено');
+    if (!silent) showToast('Дані оновлено');
   } catch (error) {
     console.error(error);
-    showToast(error.message, 'error');
+    if (!silent) showToast(error.message, 'error');
   } finally {
     state.isLoading = false;
-    refs.refreshData.disabled = false;
-    refs.refreshData.textContent = 'Оновити дані';
+    if (!silent) {
+      refs.refreshData.disabled = false;
+      refs.refreshData.textContent = 'Оновити дані';
+    }
   }
 }
 
 function findTaskById(taskId) {
   return state.tasks.find((task) => getValue(task, 'id') === taskId);
+}
+
+
+function findSubtaskById(subtaskId) {
+  return state.subtasks.find((subtask) => String(getSubtaskValue(subtask, 'id')) === String(subtaskId));
+}
+
+function renderModalSubtasks(taskId) {
+  const subtasks = getTaskSubtasks(taskId);
+  const stats = subtaskStats(taskId);
+
+  refs.subtaskSection.classList.remove('hidden');
+  refs.modalSubtasks.innerHTML = subtasks.length ? subtasks.map((subtask) => {
+    const subtaskId = getSubtaskValue(subtask, 'id');
+    const checked = isSubtaskDone(subtask) ? 'checked' : '';
+    const deadline = getSubtaskValue(subtask, 'deadline');
+    const owner = getSubtaskValue(subtask, 'owner');
+    return `
+      <label class="subtask-item modal-subtask ${checked ? 'done' : ''}">
+        <input type="checkbox" data-action="toggle-subtask" data-subtask-id="${escapeHtml(subtaskId)}" ${checked} />
+        <span>
+          <strong>${escapeHtml(getSubtaskValue(subtask, 'title') || subtaskId)}</strong>
+          <small>${escapeHtml(subtaskId)}${owner ? ` · ${escapeHtml(owner)}` : ''}${deadline ? ` · ${escapeHtml(formatDate(deadline))}` : ''}</small>
+        </span>
+      </label>
+    `;
+  }).join('') : '<div class="empty-state">Підзадач ще немає. Додай першу підзадачу нижче.</div>';
+
+  $('#subtaskProgressInfo').textContent = subtasks.length
+    ? `Виконано ${stats.done} з ${stats.total}. Прогрес задачі: ${stats.progress}%.`
+    : 'Прогрес задачі можна буде рахувати по чеклисту після додавання підзадач.';
+}
+
+function hideModalSubtasks() {
+  refs.subtaskSection.classList.add('hidden');
+  refs.modalSubtasks.innerHTML = '';
+  refs.newSubtaskTitle.value = '';
+  $('#subtaskProgressInfo').textContent = '';
 }
 
 function openTaskModal(task = null) {
@@ -529,6 +663,12 @@ function openTaskModal(task = null) {
   $('#taskProgress').value = isEdit ? normalizePercent(getValue(task, 'progress')) : 0;
   $('#taskBlocker').checked = isEdit ? isBlocked(task) : false;
   $('#taskBlockingReason').value = isEdit ? getValue(task, 'blockingReason') : '';
+
+  if (isEdit) {
+    renderModalSubtasks(getValue(task, 'id'));
+  } else {
+    hideModalSubtasks();
+  }
 
   refs.taskModal.showModal();
 }
@@ -574,7 +714,7 @@ async function saveTask(event) {
       showToast('Задачу створено');
     }
     refs.taskModal.close();
-    await loadData();
+    await loadData({ silent: true });
   } catch (error) {
     console.error(error);
     showToast(error.message, 'error');
@@ -588,7 +728,7 @@ async function quickUpdateTask(taskId, fields) {
   try {
     await apiCall('updateTask', { taskId, fields });
     showToast(`Задачу ${taskId} оновлено`);
-    await loadData();
+    await loadData({ silent: true });
   } catch (error) {
     console.error(error);
     showToast(error.message, 'error');
@@ -619,7 +759,60 @@ async function saveComment(event) {
     await apiCall('addComment', payload);
     refs.commentModal.close();
     showToast(`Коментар до ${taskId} додано`);
-    await loadData();
+    await loadData({ silent: true });
+  } catch (error) {
+    console.error(error);
+    showToast(error.message, 'error');
+  }
+}
+
+
+async function toggleSubtask(subtaskId, checked) {
+  const subtask = findSubtaskById(subtaskId);
+  const taskId = subtask ? getSubtaskValue(subtask, 'taskId') : '';
+  const fields = {};
+  setSubtaskValue(fields, 'status', checked ? 'Готово' : 'До роботи');
+  setSubtaskValue(fields, 'progress', checked ? 1 : 0);
+
+  try {
+    await apiCall('updateSubtask', { subtaskId, fields });
+    showToast(checked ? `Підзадачу ${subtaskId} виконано` : `Підзадачу ${subtaskId} повернуто в роботу`);
+    await loadData({ silent: true });
+    const activeModalTaskId = $('#taskId').value;
+    if (refs.taskModal.open && activeModalTaskId) renderModalSubtasks(activeModalTaskId);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message, 'error');
+    await loadData({ silent: true });
+    if (refs.taskModal.open && taskId) renderModalSubtasks(taskId);
+  }
+}
+
+async function addSubtaskFromModal() {
+  const taskId = $('#taskId').value;
+  const title = refs.newSubtaskTitle.value.trim();
+  if (!taskId) {
+    showToast('Спочатку створи задачу, потім додавай підзадачі.', 'warning');
+    return;
+  }
+  if (!title) {
+    showToast('Введи назву підзадачі.', 'warning');
+    return;
+  }
+
+  const fields = {};
+  setSubtaskValue(fields, 'title', title);
+  setSubtaskValue(fields, 'owner', $('#taskOwner').value || '');
+  setSubtaskValue(fields, 'priority', $('#taskPriority').value || 'P2 Середній');
+  setSubtaskValue(fields, 'status', 'До роботи');
+  setSubtaskValue(fields, 'progress', 0);
+
+  try {
+    await apiCall('createSubtask', { taskId, fields });
+    refs.newSubtaskTitle.value = '';
+    showToast('Підзадачу додано');
+    await loadData({ silent: true });
+    renderModalSubtasks(taskId);
   } catch (error) {
     console.error(error);
     showToast(error.message, 'error');
@@ -646,7 +839,14 @@ function handleBoardClick(event) {
 }
 
 function handleBoardChange(event) {
-  if (event.target.dataset.action !== 'change-status') return;
+  const action = event.target.dataset.action;
+
+  if (action === 'toggle-subtask') {
+    toggleSubtask(event.target.dataset.subtaskId, event.target.checked);
+    return;
+  }
+
+  if (action !== 'change-status') return;
   const card = event.target.closest('[data-task-id]');
   if (!card) return;
   const fields = {};
@@ -662,14 +862,27 @@ function handleTableClick(event) {
   if (task) openTaskModal(task);
 }
 
+
+function handleModalChange(event) {
+  if (event.target.dataset.action !== 'toggle-subtask') return;
+  toggleSubtask(event.target.dataset.subtaskId, event.target.checked);
+}
+
+function handleModalClick(event) {
+  if (event.target.dataset.action !== 'add-subtask') return;
+  addSubtaskFromModal();
+}
+
 function bindEvents() {
-  refs.refreshData.addEventListener('click', loadData);
+  refs.refreshData.addEventListener('click', () => loadData({ silent: false }));
   refs.openCreateTask.addEventListener('click', () => openTaskModal());
   refs.taskForm.addEventListener('submit', saveTask);
   refs.commentForm.addEventListener('submit', saveComment);
   refs.board.addEventListener('click', handleBoardClick);
   refs.board.addEventListener('change', handleBoardChange);
   refs.tableBody.addEventListener('click', handleTableClick);
+  refs.taskModal.addEventListener('change', handleModalChange);
+  refs.taskModal.addEventListener('click', handleModalClick);
 
   [refs.searchInput, refs.statusFilter, refs.priorityFilter, refs.ownerFilter, refs.departmentFilter, refs.overdueOnly]
     .forEach((el) => el.addEventListener('input', applyFilters));
@@ -685,9 +898,9 @@ function init() {
     renderAll();
     return;
   }
-  loadData();
+  loadData({ silent: false });
   if (CONFIG.REFRESH_INTERVAL_MS > 0) {
-    window.setInterval(loadData, CONFIG.REFRESH_INTERVAL_MS);
+    state.autoRefreshTimer = window.setInterval(() => loadData({ silent: true }), CONFIG.REFRESH_INTERVAL_MS);
   }
 }
 
