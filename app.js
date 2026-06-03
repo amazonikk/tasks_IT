@@ -1,5 +1,5 @@
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbw6paTyCtSIE7-PlJVZMvb9LO8a32VJB-sVrPaa0rXQ2ejCkR58NyznGwAv2a-TCKBZ2Q/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycbyyKO-eWEw7Ru5SXWqKazRBXpAHW85cQyVUrJ-7p9s8yZubxb33SFXNjzmKpfrWBdF6Bw/exec',
   API_TOKEN: 'tasks_secret_2026',
   REFRESH_INTERVAL_MS: 300000, // автооновлення раз на 5 хвилин.
 };
